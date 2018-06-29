@@ -1,5 +1,6 @@
 import sys
 import numpy as np
+import statistics
 
 class Aligner():
 
@@ -57,12 +58,32 @@ class Aligner():
             pos += interval
         return seeds  
 
-    def seed(self, read, lenght = 20, interval = 10):
+    def seed(self, read, lenght, interval):
         if self.field_size == -1 or self.field_size != length:
             create_index(length)
         seeds = create_seeds(read, lenght, interval)
-        seed_hits = []
+        seed_hits = {}
         for seed in seeds:
-            seed_hits.append(self.index[seed])
-        
+            seed_hits[seed] = self.index[seed]
+        return seed_hits
+
+
+    def choose_extend_place(self, seed_hits, read_length):
+        all_hits =[]
+        for seed in seed_hits:
+            all_hits.append(seed_hits[seed])
+        hits_in_area = {}
+        for hit in seed_hits:
+            hits_in_area[hit] = [hit]
+            for i in seed_hits:
+                if abs(hit - i) < read_length and hit != i:
+                    hits_in_area[hit].append[i]
+        max_neighbours = -1
+        for hit in hits_in_area:
+            if len(hits_in_area[hit]) >  max_neighbours:
+                max_neighbours = hits_in_area[hit]
+        max_neighbours = max_neighbours.sort()
+        extend_location = statistics.median(max_neighbours)
+        return extend_location
+       
 
