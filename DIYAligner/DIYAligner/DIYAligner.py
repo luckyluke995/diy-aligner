@@ -57,7 +57,7 @@ class Aligner():
             pos += interval
         return seeds  
 
-    def seed(self, read, lenght, interval):
+    def seed(self, read, lenght = 20, interval = 10):
         if self.field_size == -1 or self.field_size != length:
             create_index(length)
         seeds = create_seeds(read, lenght, interval)
