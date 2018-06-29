@@ -1,5 +1,5 @@
 import sys
-import numpy as np
+import numpy
 import statistics
 
 class Aligner():
@@ -11,7 +11,7 @@ class Aligner():
                             'T' : 'A'}
         self.field_size = -1
 
-    def parse_fasta(self, filename, field_length):
+    def parse_fasta(self, filename):
         self.reference = ""
         with open(filename, "r") as file:
             file.readline()
@@ -19,7 +19,7 @@ class Aligner():
 
     def parse_fastq(self, filename):
         self.reads = []
-        with open(filename, "r") as file:
+        with open(filename, "r") as f:
             while True:
                  first_line = f.readline()
                  if len(first_line) == 0:
@@ -30,11 +30,11 @@ class Aligner():
                  qual = f.readline().rstrip()
                  self.reads.append((name, seq, qual))
 
-    def complement_reads(self, reads):
+    def complement_reads(self):
         self.reads_comp = []
-        for read in reads:
+        for read in self.reads:
             comp_read = ""
-            for letter in read:
+            for letter in read[1]:
                 comp_read = self.complements[letter] + comp_read
             self.reads_comp.append((read[0], comp_read, read[2]))
 
@@ -49,49 +49,47 @@ class Aligner():
                 self.index[substr] = [i]
 
     def create_seeds(self, read, length, interval):
-        seeds = []
+        seeds = set()
         pos = 0
         while True:
             if len(read) - pos < length:
                 break
-            seeds.append(read[i:i+length])
+            seeds.add(read[pos:pos+length])
             pos += interval
         return seeds  
 
-    def seed(self, read, lenght, interval):
+    def seed(self, read, length, interval):
         if self.field_size == -1 or self.field_size != length:
-            create_index(length)
-        seeds = create_seeds(read, lenght, interval)
+            self.create_index(length)
+        seeds = self.create_seeds(read, length, interval)
         seed_hits = {}
         for seed in seeds:
             seed_hits[seed] = self.index[seed]
         return seed_hits
 
-
     def choose_extend_place(self, seed_hits, read_length):
         all_hits =[]
         for seed in seed_hits:
-            all_hits.append(seed_hits[seed])
+            all_hits.extend(seed_hits[seed])
         hits_in_area = {}
-        for hit in seed_hits:
+        for hit in all_hits:
             hits_in_area[hit] = [hit]
-            for i in seed_hits:
+            for i in all_hits:
                 if abs(hit - i) < read_length and hit != i:
-                    hits_in_area[hit].append[i]
-        max_neighbours = -1
+                    hits_in_area[hit].append(i)
+        max_neighbours = []
         for hit in hits_in_area:
-            if len(hits_in_area[hit]) >  max_neighbours:
+            if len(hits_in_area[hit]) >  len(max_neighbours):
                 max_neighbours = hits_in_area[hit]
-        max_neighbours = max_neighbours.sort()
         extend_location = statistics.median(max_neighbours)
         return extend_location
     
-    def scoring_matrix(a,b):
+    def scoring_matrix(self, a, b):
         if a==b: return 1 
         if a=='_' or b=='_': return -7 
         return -4 
 
-    def local_alignment(x, y, s):
+    def local_alignment(self, x, y, s):
         D = numpy.zeros((len(x) + 1,len(y) + 1), dtype=int)
 
         for i in range(1,len(x) + 1):
@@ -104,7 +102,7 @@ class Aligner():
         local_max = D.max()
         return D, local_max
 
-    def tracebak(x,y,V, s):
+    def tracebak(self, x, y, V, s):
         maxValue=numpy.where(V==V.max())
         i=maxValue[0][0]
         j=maxValue[1][0]
@@ -144,5 +142,38 @@ class Aligner():
                 j-=1
         alignment= '\n'.join([ax[::-1], am[::-1], ay[::-1]])
         return alignment, tr[::-1]
+
+    def align_read(self, read, length = 20, interval = 10):
+        seed_hits = self.seed(read, length, interval)
+        extend_location = self.choose_extend_place(seed_hits, len(read))
+        ref = self.reference[int(extend_location - len(read) - 1):int(extend_location + len(read) + 1)]
+        D, max = self.local_alignment(ref, read, self.scoring_matrix)
+        aligment, transcript = self.tracebak(ref, read, D, self.scoring_matrix)
+        print(aligment)
+        print(transcript)
+
+al = Aligner()
+al.parse_fasta("InputFiles/MT.fa.txt")
+#print(len(al.reference)) 16570
+al.parse_fastq("InputFiles/synth.fq.txt")
+#for read in al.reads:
+#    print('Name = {}, Sequence = {}, Quality = {} \n'.format(read[0], read[1], read[2]))
+#print(len(al.reads)) 2488
+al.complement_reads()
+#print(al.reads[0][1])
+#print(al.reads_comp[0][1][::-1])
+#al.create_index(20)
+#for i in range(10000):
+#    print(al.index[al.reference[i:20 + i]])
+#print(al.reads[0][1])
+#seeds = al.create_seeds(al.reads[0][1], 20, 10))
+#seed_hits = al.seed(al.reads[0][1], 20, 10)
+#for hit in seed_hits:
+#    print(seed_hits[hit])
+#extend_place = al.choose_extend_place(seed_hits, len(al.reads[0][1]))
+#print(extend_place)
+al.align_read(al.reads[0][1])
+
+
 
 
