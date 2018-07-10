@@ -1,23 +1,36 @@
 import sys
 import numpy
 import statistics
+from tqdm import tqdm
 
 class Aligner():
 
-    def __init__(self):
+    def __init__(self, ref_file, reads_file):
         self.complements = {'A' : 'T', 
                             'C' : 'G', 
                             'G' : 'C', 
                             'T' : 'A'}
         self.field_size = -1
+        self.parse_fasta(ref_file)
+        self.parse_fastq(reads_file)
+
+    def complement_reads(self):
+        self.reads_comp = []
+        for read in self.reads:
+            comp_read = ""
+            for letter in read[1]:
+                comp_read = self.complements[letter] + comp_read
+            self.reads_comp.append((read[0], comp_read, read[2]))
 
     def parse_fasta(self, filename):
+        self.ref_file = filename
         self.reference = ""
         with open(filename, "r") as file:
             file.readline()
             self.reference = file.readline()
 
     def parse_fastq(self, filename):
+        self.reads_file = filename
         self.reads = []
         with open(filename, "r") as f:
             while True:
@@ -28,15 +41,10 @@ class Aligner():
                  seq = f.readline().rstrip()
                  f.readline()
                  qual = f.readline().rstrip()
+                 if qual.find('#') != -1:
+                    continue
                  self.reads.append((name, seq, qual))
-
-    def complement_reads(self):
-        self.reads_comp = []
-        for read in self.reads:
-            comp_read = ""
-            for letter in read[1]:
-                comp_read = self.complements[letter] + comp_read
-            self.reads_comp.append((read[0], comp_read, read[2]))
+        self.complement_reads()
 
     def create_index(self, ln):
         self.index = {}
@@ -64,7 +72,8 @@ class Aligner():
         seeds = self.create_seeds(read, length, interval)
         seed_hits = {}
         for seed in seeds:
-            seed_hits[seed] = self.index[seed]
+            if seed in self.index:
+                seed_hits[seed] = self.index[seed]
         return seed_hits
 
     def choose_extend_place(self, seed_hits, read_length):
@@ -106,6 +115,8 @@ class Aligner():
         maxValue=numpy.where(V==V.max())
         i=maxValue[0][0]
         j=maxValue[1][0]
+        soft_clip = False 
+        if j != len(y): soft_clip = True 
         ax,ay,am, tr = '','','',''
         while (i>0 or j>0) and V[i,j]!=0:
             if i>0 and j>0:
@@ -141,38 +152,45 @@ class Aligner():
                 am+=' '
                 j-=1
         alignment= '\n'.join([ax[::-1], am[::-1], ay[::-1]])
-        return alignment, tr[::-1]
+        if j != 0: soft_clip = True
+
+        return alignment, tr[::-1], soft_clip, i
 
     def align_read(self, read, length = 20, interval = 10):
         seed_hits = self.seed(read, length, interval)
-        extend_location = self.choose_extend_place(seed_hits, len(read))
-        ref = self.reference[int(extend_location - len(read) - 1):int(extend_location + len(read) + 1)]
-        D, max = self.local_alignment(ref, read, self.scoring_matrix)
-        aligment, transcript = self.tracebak(ref, read, D, self.scoring_matrix)
-        print(aligment)
-        print(transcript)
+        max = -1
+        transcript = "NO_ALIGNMENT"
+        soft_clip = False
+        position = -1
+        if seed_hits:
+            extend_location = self.choose_extend_place(seed_hits, len(read))
+            ref = self.reference[int(extend_location - len(read) - 1):int(extend_location + len(read) + 1)]
+            D, max = self.local_alignment(ref, read, self.scoring_matrix)
+            alignment, transcript, soft_clip, position = self.tracebak(ref, read, D, self.scoring_matrix)
+            position = extend_location - len(read) + position
+            if soft_clip: max -= 5
+        
+        return max, transcript, soft_clip, position
 
-al = Aligner()
-al.parse_fasta("InputFiles/MT.fa.txt")
-#print(len(al.reference)) 16570
-al.parse_fastq("InputFiles/synth.fq.txt")
-#for read in al.reads:
-#    print('Name = {}, Sequence = {}, Quality = {} \n'.format(read[0], read[1], read[2]))
-#print(len(al.reads)) 2488
-al.complement_reads()
-#print(al.reads[0][1])
-#print(al.reads_comp[0][1][::-1])
-#al.create_index(20)
-#for i in range(10000):
-#    print(al.index[al.reference[i:20 + i]])
-#print(al.reads[0][1])
-#seeds = al.create_seeds(al.reads[0][1], 20, 10))
-#seed_hits = al.seed(al.reads[0][1], 20, 10)
-#for hit in seed_hits:
-#    print(seed_hits[hit])
-#extend_place = al.choose_extend_place(seed_hits, len(al.reads[0][1]))
-#print(extend_place)
-al.align_read(al.reads[0][1])
+    def output(self, output_file, read, flag, position, max, transcript):
+        with open(output_file, "a+") as file:
+            file.write("{}  {}  {}  {}  {}  {}  {}  {}\n".format(
+                read[0], flag, "MT", position, max, transcript, read[1], read[2]))
+
+
+    def align(self, length = 20, interval = 10, output_file = "output.sam"):
+        for i in tqdm(range(len(self.reads))):
+            max1, transcript1, soft_clip1, position1 = self.align_read(self.reads[i][1])
+            max2, transcript2, soft_clip2, position2 = self.align_read(self.reads_comp[i][1])
+            if max1 > max2:
+                self.output(output_file, self.reads[i], 0, position1, max1, transcript1)
+            else:
+                self.output(output_file, self.reads_comp[i], 1, position2, max2, transcript2)
+        print("Successfully aligned {} reads\n".format(len(self.reads)))
+        
+
+al = Aligner("InputFiles/MT.fa.txt", "InputFiles/test.fastq.txt")
+al.align()
 
 
 
